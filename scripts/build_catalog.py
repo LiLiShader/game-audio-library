@@ -11,6 +11,9 @@ REPO='LiLiShader/game-audio-library'
 PAGE='https://lilishader.github.io/game-audio-library/'
 RELEASE=f'https://github.com/{REPO}/releases/download/library'
 CATEGORIES=[('01','背景音乐','BGM','场景氛围与循环音乐'),('02','界面交互','UI','按钮、弹窗、开关与翻页'),('03','核心玩法','GAMEPLAY','消除、攻击、脚步与环境'),('04','道具技能','SKILLS','魔法、增益与道具触发'),('05','障碍机关','OBSTACLES','碰撞、破碎与机关解锁'),('06','奖励收获','REWARDS','金币、宝箱与礼物'),('07','收集图鉴','COLLECTION','相册、拼图与成就收集'),('08','关卡结果','RESULTS','胜利、失败与结算'),('09','商店消费','SHOP','购买与交易反馈'),('10','体力生命','LIFE','生命、体力与状态变化'),('11','人声语音','VOICE','语音播报与人物反馈')]
+
+KEYWORDS={'button':'按钮','click':'点击','select':'选择','confirm':'确认','cancel':'取消','menu':'菜单','open':'打开','close':'关闭','switch':'开关','coin':'金币','gold':'金币','reward':'奖励','collect':'收集','pickup':'拾取','bonus':'奖励','explosion':'爆炸','explode':'爆炸','bomb':'炸弹','blast':'爆炸','hit':'击中','impact':'撞击','break':'破碎','crash':'碰撞','magic':'魔法','spell':'法术','fire':'火焰','water':'水滴','splash':'水花','wind':'风','ice':'冰','footstep':'脚步','walk':'行走','jump':'跳跃','laser':'激光','shoot':'射击','shot':'射击','win':'胜利','victory':'胜利','success':'成功','fail':'失败','death':'死亡','lose':'失败','health':'生命','hurt':'受伤','damage':'伤害','ambient':'环境','ambience':'环境','music':'音乐','bgm':'背景音乐','loop':'循环','monster':'怪物','creature':'生物','voice':'人声','wood':'木头','metal':'金属','stone':'石头','glass':'玻璃','door':'门','paper':'纸张','error':'错误','alert':'警报','powerup':'强化','levelup':'升级'}
+
 def source_info(p):
     data={}
     if p.exists():
@@ -51,7 +54,7 @@ def main(bundles=True):
                 duration=round(parsed.info.length,3)
         except Exception as exc:errors.append({'path':rel,'error':str(exc)});continue
         label=re.sub(r'[_\-]+',' ',p.stem).strip()
-        tracks.append({'id':hashlib.sha256(rel.encode()).hexdigest()[:16],'name':p.name,'title':label,'description':descriptions.get(rel,''),'path':rel,'url':quote(rel,safe='/'),'category':cat,'source':source_id,'format':p.suffix[1:].upper(),'bytes':p.stat().st_size,'duration':duration,'sha256':digest,'license':sources[source_id]['license']})
+        tracks.append({'id':hashlib.sha256(rel.encode()).hexdigest()[:16],'name':p.name,'title':label,'description':descriptions.get(rel,''),'tags':list(dict.fromkeys(v for k,v in KEYWORDS.items() if k in p.stem.lower())),'path':rel,'url':quote(rel,safe='/'),'category':cat,'source':source_id,'format':p.suffix[1:].upper(),'bytes':p.stat().st_size,'duration':duration,'sha256':digest,'license':sources[source_id]['license']})
     if errors:raise SystemExit('Audio metadata errors: '+json.dumps(errors,ensure_ascii=False))
     if not tracks:raise SystemExit('No audio files; refusing to publish an empty catalog')
     counts=collections.Counter(t['category'] for t in tracks);sha_groups=collections.Counter(t['sha256'] for t in tracks)
@@ -104,7 +107,7 @@ def render_readme(c):
 2. **先试听**：点击播放即可试听。收藏喜欢的声音，使用底部播放器调节进度与音量。
 3. **放进游戏**：下载单个原始文件，或按分类下载 ZIP。也可以点击「复制给 AI」，获得文件链接、用途与许可信息。
 
-无需登录即可浏览、试听和下载。收藏仅保存在当前浏览器。音频保持原始格式和音量；OGG 播放支持取决于浏览器。
+无需登录即可浏览、试听和下载。中文搜索关键词部分按原文件名推断，仅用于辅助检索，请以试听为准。收藏仅保存在当前浏览器。音频保持原始格式和音量；OGG 播放支持取决于浏览器。
 
 ## 按用途下载
 
