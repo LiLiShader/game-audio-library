@@ -3,6 +3,7 @@
 import argparse,fcntl,hashlib,json,os,shutil,subprocess,sys,time
 from datetime import datetime
 from pathlib import Path
+from github_publish import remote_head, publish
 ROOT=Path(__file__).resolve().parents[1];REPO='LiLiShader/game-audio-library';os.environ.setdefault('GODEBUG','http2client=0')
 GH=os.environ.get('GH_BIN') or shutil.which('gh') or 'gh'
 ALLOWED={'.mp3','.wav','.ogg','.md','.txt'}
@@ -13,7 +14,7 @@ def run(args,**kw):
             if i==2:raise
             print('网络操作重试…',flush=True);time.sleep(3)
 def gh(*args,**kw):return run([GH,*args],**kw)
-def git(*args,**kw):return run(['git','-c','credential.helper=','-c',f'credential.helper=!{GH} auth git-credential',*args],cwd=ROOT,**kw)
+def git(*args,**kw):return run(['git','-c','http.version=HTTP/1.1','-c','http.postBuffer=524288000','-c','http.lowSpeedLimit=1024','-c','http.lowSpeedTime=30','-c','credential.helper=','-c',f'credential.helper=!{GH} auth git-credential',*args],cwd=ROOT,**kw)
 def files(source):
     return {p.relative_to(source).as_posix():p for p in source.rglob('*') if p.is_file() and not p.is_symlink() and p.suffix.lower() in ALLOWED and not any(v.startswith('.') for v in p.relative_to(source).parts) and p.name!='AGENTS.md'}
 def signature(source):
@@ -33,12 +34,11 @@ def sync(source,allow_large=False,dry=False):
     if dry:return
     branch=git('branch','--show-current',capture_output=True).stdout.strip()
     if branch!='main':raise RuntimeError('请先切换到 main 分支。')
-    git('fetch','origin','main',stdout=subprocess.DEVNULL)
-    head=git('rev-parse','HEAD',capture_output=True).stdout.strip();remote=git('rev-parse','origin/main',capture_output=True).stdout.strip()
+    head=git('rev-parse','HEAD',capture_output=True).stdout.strip();remote=remote_head(GH)
     if head!=remote:
-        ancestor=subprocess.run(['git','merge-base','--is-ancestor','origin/main','HEAD'],cwd=ROOT).returncode==0
-        pending=git('log','--format=%s','origin/main..HEAD',capture_output=True).stdout.splitlines()
-        if ancestor and pending and all(m.startswith('Update audio collection ') for m in pending):git('push','origin','main')
+        ancestor=subprocess.run(['git','merge-base','--is-ancestor',remote,'HEAD'],cwd=ROOT).returncode==0
+        pending=git('log','--format=%s',remote+'..HEAD',capture_output=True).stdout.splitlines()
+        if ancestor and pending and all(m.startswith('Update audio collection ') for m in pending):publish(GH,remote)
         else:raise RuntimeError('本地与远端版本不一致。请先检查并合并；脚本不会强制覆盖。')
     staged=git('diff','--cached','--name-only',capture_output=True).stdout.splitlines()
     if any(not (p.startswith('audio/') or p in {'README.md','catalog.json'}) for p in staged):raise RuntimeError('暂存区含其他改动，请先单独提交或取消暂存。')
@@ -53,7 +53,7 @@ def sync(source,allow_large=False,dry=False):
     status=git('diff','--cached','--name-only',capture_output=True).stdout.strip()
     if status:
         git('commit','-m','Update audio collection '+datetime.now().strftime('%Y-%m-%d %H:%M'))
-        git('push','origin','main')
+        publish(GH,remote_head(GH))
     publish_bundles()
     print('发布完成。GitHub Pages 部署完成后网页会更新：\nhttps://lilishader.github.io/game-audio-library/',flush=True)
 def publish_bundles():
