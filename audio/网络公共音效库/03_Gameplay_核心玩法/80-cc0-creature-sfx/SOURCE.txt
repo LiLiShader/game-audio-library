@@ -1,0 +1,7 @@
+包名: 80 CC0 creature SFX
+来源: https://opengameart.org/content/80-cc0-creature-sfx
+作者: rubberduck
+许可: CC0 1.0 Universal（公有领域，可自由商用/修改/分发，无需署名）
+许可原文: https://creativecommons.org/publicdomain/zero/1.0/
+采集日期: 2026-11-06
+文件数: 80

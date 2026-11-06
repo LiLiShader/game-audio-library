@@ -1,0 +1,58 @@
+'use strict';
+const $=id=>document.getElementById(id);
+const audio=$('audio');let catalog,byId,categories,sources,filtered=[],current=null,page=1,playRequest=0;
+const params=new URLSearchParams(location.search);
+const state={category:params.get('category')||'',query:params.get('q')||'',format:params.get('format')||'',source:params.get('source')||'',favorites:false,sort:'default'};
+let favorites=new Set();try{const v=JSON.parse(localStorage.getItem('soundfield-favorites')||'[]');if(Array.isArray(v))favorites=new Set(v.filter(x=>typeof x==='string'));}catch{}
+const pageSize=30;
+const escapeHTML=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const time=v=>!Number.isFinite(v)?'—':`${Math.floor(v/60)}:${String(Math.floor(v%60)).padStart(2,'0')}`;
+const duration=v=>v<1?`${v.toFixed(1)}s`:time(v);
+const size=v=>v<1048576?`${(v/1024).toFixed(0)} KB`:`${(v/1048576).toFixed(1)} MB`;
+let toastTimer;
+function toast(text){$('toast').textContent=text;$('toast').classList.add('visible');clearTimeout(toastTimer);toastTimer=setTimeout(()=>$('toast').classList.remove('visible'),3500);}
+function saveFavorites(){try{localStorage.setItem('soundfield-favorites',JSON.stringify([...favorites]));}catch{toast('浏览器暂时无法保存收藏，本次页面仍可使用。');}}
+function syncUrl(){const p=new URLSearchParams();for(const [k,v] of Object.entries({category:state.category,q:state.query,format:state.format,source:state.source}))if(v)p.set(k,v);history.replaceState(null,'',location.pathname+(p.size?'?'+p:'')+location.hash);}
+function renderCategories(){const counts=catalog.categories;const items=[{id:'',name:'全部声音',count:catalog.stats.count},...counts];$('category-list').innerHTML=items.map(c=>`<button class="category ${state.category===c.id?'active':''}" data-category="${c.id}" aria-pressed="${state.category===c.id}"><span class="symbol">${c.id||'◉'}</span><span>${escapeHTML(c.name)}</span><span class="count">${c.count.toLocaleString()}</span></button>`).join('');}
+function render(){
+ const q=state.query.trim().toLowerCase();
+ filtered=catalog.tracks.filter(t=>(!state.category||t.category===state.category)&&(!state.format||t.format===state.format)&&(!state.source||t.source===state.source)&&(!state.favorites||favorites.has(t.id))&&(!q||q.split(/\s+/).every(word=>`${t.name} ${t.title} ${t.description} ${categories.get(t.category)?.name} ${categories.get(t.category)?.description} ${sources.get(t.source)?.name} ${t.path}`.toLowerCase().includes(word))));
+ filtered.sort((a,b)=>state.sort==='short'?a.duration-b.duration:state.sort==='long'?b.duration-a.duration:state.sort==='name'?a.name.localeCompare(b.name):a.category.localeCompare(b.category)||a.name.localeCompare(b.name));
+ const pages=Math.max(1,Math.ceil(filtered.length/pageSize));page=Math.min(Math.max(1,page),pages);const start=(page-1)*pageSize,view=filtered.slice(start,start+pageSize);
+ $('track-list').innerHTML=view.map(t=>{const source=sources.get(t.source),cat=categories.get(t.category);const active=current?.id===t.id&&!audio.paused;return `<article class="track ${active?'playing':''}" data-id="${t.id}"><div class="track-main"><button class="play-button row-play" data-action="play" aria-label="${active?'暂停':'试听'} ${escapeHTML(t.name)}">${active?'Ⅱ':'▶'}</button><div class="track-info"><div class="track-title" title="${escapeHTML(t.name)}">${escapeHTML(t.title)}</div><div class="track-desc" title="${escapeHTML(t.description||t.name)}">${escapeHTML(t.description||t.name)}</div><div class="track-source"><span title="${escapeHTML(source.name)}">${escapeHTML(source.name)}</span><span class="license">${escapeHTML(t.license)}</span><span>${t.format} · ${size(t.bytes)}</span></div></div></div><span class="category-chip">${escapeHTML(cat.name)}</span><span class="duration" title="${t.duration} 秒">${duration(t.duration)}</span><div class="track-actions"><button class="favorite-button ${favorites.has(t.id)?'saved':''}" data-action="favorite" aria-label="${favorites.has(t.id)?'取消收藏':'收藏'} ${escapeHTML(t.name)}" aria-pressed="${favorites.has(t.id)}">${favorites.has(t.id)?'♥':'♡'}</button><button class="copy-ai" data-action="copy" title="复制素材信息给 AI Agent" aria-label="复制 ${escapeHTML(t.name)} 的链接和素材信息给 AI">AI</button><a href="${escapeHTML(t.url)}" download="${escapeHTML(t.name)}" title="下载原始文件" aria-label="下载 ${escapeHTML(t.name)}">↓</a></div></article>`;}).join('');
+ $('result-count').textContent=`找到 ${filtered.length.toLocaleString()} 个声音${filtered.length?` · 展示 ${start+1}–${Math.min(start+pageSize,filtered.length)}`:''}`;
+ $('category-heading').textContent=state.favorites?'我的收藏':categories.get(state.category)?.name||'全部声音';
+ $('favorite-count').textContent=favorites.size;$('favorites-filter').setAttribute('aria-pressed',String(state.favorites));
+ $('empty-state').classList.toggle('hidden',filtered.length>0);$('previous').disabled=page<=1;$('next').disabled=page>=pages;$('page-status').textContent=`${page} / ${pages}`;
+ const category=categories.get(state.category);$('category-download').classList.toggle('hidden',!category||!category.count);if(category)$('category-download').href=category.download;
+ renderCategories();syncUrl();
+}
+function updatePlayback(){
+ const active=current&&!audio.paused;$('player-play').textContent=active?'Ⅱ':'▶';$('player-play').setAttribute('aria-label',active?'暂停':'播放');
+ document.querySelectorAll('.track').forEach(row=>{const playing=active&&row.dataset.id===current.id;row.classList.toggle('playing',Boolean(playing));const btn=row.querySelector('.row-play');btn.textContent=playing?'Ⅱ':'▶';btn.setAttribute('aria-label',`${playing?'暂停':'试听'} ${byId.get(row.dataset.id).name}`);});
+}
+async function play(t){
+ if(current?.id===t.id&&!audio.paused){audio.pause();return;}
+ const ticket=++playRequest;
+ if(current?.id!==t.id){audio.pause();current=t;audio.src=t.url;$('player-title').textContent=t.title;$('player-subtitle').textContent=`${categories.get(t.category).name} · ${t.format} · ${sources.get(t.source).name}`;$('time-total').textContent=time(t.duration);$('time-current').textContent='0:00';$('seek').value=0;}
+ $('player-play').disabled=false;
+ try{await audio.play();if(ticket===playRequest)updatePlayback();}catch(e){if(e.name!=='AbortError'&&ticket===playRequest)toast('试听暂不可用：请检查网络，或下载原文件在本地播放。');}
+}
+async function copyTrack(t){const source=sources.get(t.source);const text=`请将以下音频按需接入我现有的游戏，保留现有玩法和音量设置。\n文件：${t.name}\n用途分类：${categories.get(t.category).name}\n用途说明：${t.description||'请试听后确认合适场景'}\n下载地址：${new URL(t.url,location.href).href}\n来源：${source.name}${source.url?' '+source.url:''}\n许可：${t.license}${source.licenseUrl?' '+source.licenseUrl:''}\n时长：${t.duration} 秒\nSHA-256：${t.sha256}\n请下载并核验文件，避免循环播放短促音效或覆盖原来的游戏逻辑。`;
+ try{await navigator.clipboard.writeText(text);toast('已复制素材信息，可以粘贴给 AI Agent。');}catch{const el=document.createElement('textarea');el.value=text;el.style.position='fixed';el.style.left='-9999px';document.body.append(el);el.select();const success=document.execCommand('copy');el.remove();toast(success?'已复制素材信息。':'复制失败，请使用下载按钮并查看 catalog.json。');}}
+$('track-list').addEventListener('click',e=>{const control=e.target.closest('button[data-action]');if(!control)return;const t=byId.get(control.closest('[data-id]').dataset.id);if(control.dataset.action==='play')play(t);if(control.dataset.action==='copy')copyTrack(t);if(control.dataset.action==='favorite'){favorites.has(t.id)?favorites.delete(t.id):favorites.add(t.id);saveFavorites();render();}});
+$('category-list').addEventListener('click',e=>{const btn=e.target.closest('[data-category]');if(!btn)return;state.category=btn.dataset.category;page=1;render();});
+let searchTimer;$('search').addEventListener('input',()=>{clearTimeout(searchTimer);searchTimer=setTimeout(()=>{state.query=$('search').value;page=1;render();},120);});
+for(const btn of document.querySelectorAll('[data-format]'))btn.addEventListener('click',()=>{state.format=btn.dataset.format;for(const b of document.querySelectorAll('[data-format]')){b.classList.toggle('active',b===btn);b.setAttribute('aria-pressed',String(b===btn));}page=1;render();});
+$('source').addEventListener('change',()=>{state.source=$('source').value;page=1;render();});$('sort').addEventListener('change',()=>{state.sort=$('sort').value;page=1;render();});$('favorites-filter').addEventListener('click',()=>{state.favorites=!state.favorites;page=1;render();});
+$('reset').addEventListener('click',()=>{Object.assign(state,{category:'',query:'',format:'',source:'',favorites:false});$('search').value='';$('source').value='';for(const b of document.querySelectorAll('[data-format]')){b.classList.toggle('active',!b.dataset.format);b.setAttribute('aria-pressed',String(!b.dataset.format));}page=1;render();});
+for(const [id,delta]of [['previous',-1],['next',1]])$(id).addEventListener('click',()=>{page+=delta;render();document.querySelector('.library-heading').scrollIntoView({behavior:'smooth',block:'start'});});
+$('player-play').addEventListener('click',()=>{if(current)play(current);});audio.volume=.65;
+$('volume').addEventListener('input',()=>audio.volume=Number($('volume').value));$('seek').addEventListener('input',()=>{if(Number.isFinite(audio.duration))audio.currentTime=audio.duration*Number($('seek').value)/1000;});
+for(const event of ['play','pause','ended'])audio.addEventListener(event,updatePlayback);
+audio.addEventListener('loadedmetadata',()=>{$('time-total').textContent=time(audio.duration);$('seek').disabled=!Number.isFinite(audio.duration);});audio.addEventListener('timeupdate',()=>{$('time-current').textContent=time(audio.currentTime);$('seek').value=audio.duration?Math.round(audio.currentTime/audio.duration*1000):0;});audio.addEventListener('error',()=>{if(current)toast('此音频暂时无法播放，可能是网络或浏览器格式支持问题。可下载原文件。');});
+document.addEventListener('keydown',e=>{if(e.key==='/'&&!['INPUT','TEXTAREA','SELECT'].includes(document.activeElement.tagName)){e.preventDefault();$('search').focus();}});
+(async()=>{try{const response=await fetch('catalog.json',{cache:'no-cache'});if(!response.ok)throw new Error('Catalog HTTP '+response.status);catalog=await response.json();byId=new Map(catalog.tracks.map(t=>[t.id,t]));categories=new Map(catalog.categories.map(c=>[c.id,c]));sources=new Map(catalog.sources.map(s=>[s.id,s]));favorites=new Set([...favorites].filter(id=>byId.has(id)));if(!categories.has(state.category))state.category='';if(!sources.has(state.source))state.source='';if(!['MP3','WAV','OGG'].includes(state.format))state.format='';$('stat-count').textContent=catalog.stats.count.toLocaleString();$('stat-categories').textContent=catalog.stats.categories;$('stat-size').textContent=`${(catalog.stats.bytes/1048576).toFixed(0)} MB`;$('download-all').href=catalog.allDownload;$('updated').textContent='内容更新于 '+new Date(catalog.updatedAt).toLocaleDateString('zh-CN');$('search').value=state.query;
+for(const group of ['公共音效','项目音频']){const optgroup=document.createElement('optgroup');optgroup.label=group;for(const source of catalog.sources.filter(s=>s.group===group)){const option=document.createElement('option');option.value=source.id;option.textContent=source.name;optgroup.append(option);}$('source').append(optgroup);}$('source').value=state.source;
+for(const b of document.querySelectorAll('[data-format]')){b.classList.toggle('active',b.dataset.format===state.format);b.setAttribute('aria-pressed',String(b.dataset.format===state.format));}render();
+}catch(error){$('result-count').textContent='目录加载失败，请刷新页面后重试。';$('track-list').innerHTML='<div class="empty"><h3>暂时无法加载音频目录</h3><p>请检查网络，或直接打开 GitHub 仓库下载。</p><a class="primary" href="https://github.com/LiLiShader/game-audio-library">前往 GitHub ↗</a></div>';console.error(error);}})();
